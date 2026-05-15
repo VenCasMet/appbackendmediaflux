@@ -1,0 +1,7 @@
+Pillow
+pillow-avif-plugin
+numpy
+opencv-python
+imagehash
+scikit-image
+tqdm
