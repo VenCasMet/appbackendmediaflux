@@ -1,8 +1,9 @@
+from concurrent.futures import thread
 from pathlib import Path
 import shutil
 import uuid
-
-from typing import List
+from core.job_registry import JobRegistry
+import threading
 from fastapi import (
     FastAPI,
     UploadFile,
@@ -57,7 +58,7 @@ app.mount(
 # =========================
 
 manager = ConversionManager()
-
+job_registry = JobRegistry()
 # =========================
 # HOME
 # =========================
@@ -72,135 +73,46 @@ def home():
 # =========================
 # UPLOAD + OPTIMIZE
 # =========================
-
-@app.post("/upload")
-async def upload_images(
-
-    files: List[UploadFile] = File(...),
-
-    format: str = Form("webp"),
-
-    quality: int = Form(85),
-
-    auto_mode: bool = Form(False)
+def process_batch_job(
+    job_id,
+    jobs,
+    auto_mode,
+    format,
+    quality
 ):
-
-    print("\n========== REQUEST ==========")
-    print("FORMAT:", format)
-    print("QUALITY:", quality)
-    print("AUTO MODE:", auto_mode)
-    print("=============================\n")
-
-    jobs = []
-
-    # =========================
-    # CREATE JOBS
-    # =========================
-
-    for file in files:
-
-        unique_name = (
-
-            str(uuid.uuid4())
-            + "_"
-            + file.filename
-        )
-
-        save_path = (
-            UPLOAD_DIR / unique_name
-        )
-
-        # SAVE ORIGINAL FILE
-
-        with open(save_path, "wb") as buffer:
-
-            shutil.copyfileobj(
-                file.file,
-                buffer
-            )
-
-        # =========================
-        # AUTO MODE
-        # =========================
-
-        if auto_mode:
-
-            benchmark_result = (
-
-                manager
-                .benchmark_engine
-                .benchmark(save_path)
-            )
-
-            if benchmark_result:
-
-                best = benchmark_result["best"]
-
-                selected_format = (
-                    best.output_format
-                )
-
-            else:
-
-                selected_format = "webp"
-
-        else:
-
-            selected_format = (
-                format.lower()
-            )
-
-        print(
-            f"Selected format for "
-            f"{file.filename}: "
-            f"{selected_format}"
-        )
-
-        # =========================
-        # OUTPUT PATH
-        # =========================
-
-        output_path = (
-
-            OUTPUT_DIR /
-
-            f"optimized_{unique_name}.{selected_format}"
-        )
-
-        # =========================
-        # CREATE CONVERSION JOB
-        # =========================
-
-        job = ConversionJob(
-
-            source_path=save_path,
-
-            output_format=selected_format,
-
-            quality=quality,
-
-            method=6,
-
-            output_path=output_path
-        )
-
-        jobs.append(job)
-
-    # =========================
-    # PROCESS ALL JOBS
-    # =========================
 
     results = manager.process_batch(jobs)
 
     final_results = []
 
-    # =========================
-    # FORMAT RESPONSE
-    # =========================
+    processed = 0
+    failed = 0
 
     for result in results:
+        job_registry.update_job(
+
+            job_id,
+
+            {
+
+                "status": "processing",
+
+                "processed_files": processed,
+
+                "failed_files": failed,
+
+                "progress": int(
+                   (
+                        (processed + failed)
+                        / len(results)
+                    ) * 100
+                )
+            }
+        )
 
         if result.status == "completed":
+
+            processed += 1
 
             final_results.append({
 
@@ -241,27 +153,217 @@ async def upload_images(
                     result.output_format.upper(),
 
                 "quality":
-                    result.quality
+                    result.quality,
+
+                "resolution":
+                    result.resolution,
+
+                "progress":
+                    result.progress,
+
+                "stage":
+                    result.current_stage,
+
+                "heatmap":
+                    result.heatmap_path,
+
+                "comparison":
+                    result.comparison_path,
+
+                "target_size_kb":
+                    result.target_size_kb,
+                
+                "target_size_enabled":
+                    result.target_size_enabled
+                
+                
             })
 
-    # =========================
-    # RETURN RESPONSE
-    # =========================
+        else:
 
+            failed += 1
+
+    job_registry.update_job(
+
+        job_id,
+
+        {
+
+            "status": "completed",
+
+            "progress": 100,
+
+            "results": final_results,
+
+            "processed_files": processed,
+
+            "failed_files": failed
+        }
+    )
+@app.post("/upload")
+async def upload_images(
+
+    files: list[UploadFile] = File(...),
+
+    format: str = Form("webp"),
+
+    quality: int = Form(85),
+
+    auto_mode: bool = Form(False),
+
+    target_size_kb: int = Form(0),
+
+    target_size_enabled: bool = Form(False),
+
+    resize_enabled: bool = Form(False),
+
+    resize_width: int = Form(0),
+
+    resize_height: int = Form(0),
+
+    keep_aspect_ratio: bool = Form(True)
+):
+
+    batch_job_id = str(uuid.uuid4())
+
+    job_registry.create_job(batch_job_id)
+
+    jobs = []
+
+    for file in files:
+
+        unique_name = (
+            str(uuid.uuid4())
+            + "_"
+            + file.filename
+        )
+
+        save_path = (
+            UPLOAD_DIR / unique_name
+        )
+
+        with open(save_path, "wb") as buffer:
+
+            shutil.copyfileobj(
+                file.file,
+                buffer
+            )
+
+        if auto_mode:
+
+            benchmark_result = (
+                manager
+                .benchmark_engine
+                .benchmark(save_path)
+            )
+
+            if benchmark_result:
+
+                best = benchmark_result["best"]
+
+                selected_format = (
+                    best.output_format
+                )
+
+            else:
+
+                selected_format = "webp"
+
+        else:
+
+            selected_format = (
+                format.lower()
+            )
+
+        output_path = (
+
+            OUTPUT_DIR /
+
+            f"optimized_{unique_name}.{selected_format}"
+        )
+
+        job = ConversionJob(
+
+            source_path=save_path,
+
+            output_format=selected_format,
+
+            quality=quality,
+
+            method=6,
+
+            output_path=output_path,
+
+            target_size_kb=target_size_kb,
+
+            target_size_enabled=target_size_enabled,
+
+            resize_enabled=resize_enabled,
+
+            resize_width=resize_width,
+
+            resize_height=resize_height,
+
+            keep_aspect_ratio=keep_aspect_ratio,
+        )
+
+        jobs.append(job)
+
+    job_registry.update_job(
+
+        batch_job_id,
+
+        {
+            "status": "processing",
+            "progress": 10,
+            "total_files": len(jobs)
+        }
+    )
+
+    thread = threading.Thread(
+
+    target=process_batch_job,
+
+    args=(
+        batch_job_id,
+        jobs,
+        auto_mode,
+        format,
+        quality
+    ),
+
+    daemon=True
+)
+
+    thread.start()
     return {
 
+    "success": True,
+
+    "job_id": batch_job_id,
+
+    "message": "Batch processing started",
+
+    "target_size_enabled":
+        target_size_enabled,
+
+    "target_size_kb":
+        target_size_kb
+
+}
+@app.get("/job/{job_id}")
+def get_job_status(job_id: str):
+
+    job = job_registry.get_job(job_id)
+
+    if not job:
+
+        return {
+            "success": False,
+            "message": "Job not found"
+        }
+
+    return {
         "success": True,
-
-        "count": len(final_results),
-
-        "auto_mode": auto_mode,
-
-        "selected_format":
-            format.upper(),
-
-        "quality":
-            quality,
-
-        "results":
-            final_results
+        "job": job
     }

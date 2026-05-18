@@ -1,53 +1,76 @@
-from asyncio import futures
+import gc
 import time
 
 from PIL import Image
 from pathlib import Path
-from core import job
-from core import benchmark_engine
+
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed
+)
+from utils.target_size_optimizer import (
+    TargetSizeOptimizer
+)
 from core.benchmark_engine import BenchmarkEngine
-from utils.stats import calculate_reduction
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.queue_manager import QueueManager
+
 from converters.webp_converter import WebPConverter
 from converters.jpeg_converter import JPEGConverter
 from converters.png_converter import PNGConverter
 from converters.avif_converter import AVIFConverter
+
+from utils.stats import calculate_reduction
 from utils.progress_tracker import ProgressTracker
 from utils.optimizer import OptimizationAnalyzer
 from utils.image_analyzer import ImageAnalyzer
 from utils.quality_analyzer import QualityAnalyzer
 from utils.comparison_engine import ComparisonEngine
-from utils.quality_optimizer import (QualityOptimizer)
-from utils.heatmap_generator import (HeatmapGenerator)
-from utils.comparison_generator import (ComparisonGenerator)
+from utils.quality_optimizer import QualityOptimizer
+from utils.heatmap_generator import HeatmapGenerator
+from utils.comparison_generator import ComparisonGenerator
+
 
 class ConversionManager:
 
-    def __init__(self, workers=4):
+    def __init__(self, workers=2):
 
+        # REDUCED WORKERS
+        # VERY IMPORTANT FOR MEMORY SAFETY
         self.workers = workers
+
         self.queue_manager = QueueManager()
+
         self.benchmark_engine = BenchmarkEngine(self)
+
         self.converters = {
             "webp": WebPConverter(),
             "jpeg": JPEGConverter(),
             "png": PNGConverter(),
             "avif": AVIFConverter()
         }
+
         self.comparison_engine = ComparisonEngine()
+
     def get_converter(self, output_format):
 
         converter = self.converters.get(output_format)
 
         if not converter:
-            raise ValueError(f"Unsupported format: {output_format}")
+            raise ValueError(
+                f"Unsupported format: {output_format}"
+            )
 
         return converter
 
+    def cleanup_memory(self):
+
+        gc.collect()
+
     def process_job(self, job):
 
-        converter = self.get_converter(job.output_format)
+        converter = self.get_converter(
+            job.output_format
+        )
 
         try:
 
@@ -55,54 +78,34 @@ class ConversionManager:
 
             job.status = "processing"
 
-            job.image_analysis = (
-                ImageAnalyzer.analyze(job.source_path)
-            )
+            # =========================
+            # STAGE 1 - ANALYZE
+            # =========================
 
-            # if not job.is_benchmark:
-
-            #     from core.benchmark_engine import BenchmarkEngine
-
-            #     benchmark_engine = BenchmarkEngine(self)
-
-            #     benchmark_result = benchmark_engine.benchmark(
-            #         job.source_path
-            #     )
-
-            #     if benchmark_result:
-
-            #         best = benchmark_result["best"]
-
-            #         job.benchmark_recommendation = (
-            #             best.output_format
-            #         )
-
-            #         # TRANSFER KEEP-ORIGINAL DECISION
-            #         job.keep_original = best.keep_original
-
-        # STAGE 1
             ProgressTracker.update(
                 job,
                 10,
                 "loading"
             )
 
-            job.original_size = job.source_path.stat().st_size
-
-        # STAGE 2
-            ProgressTracker.update(
-                job,
-                30,
-                "preparing"
+            job.image_analysis = (
+                ImageAnalyzer.analyze(
+                    job.source_path
+                )
             )
 
-            time.sleep(0.05)
+            job.original_size = (
+                job.source_path.stat().st_size
+            )
 
-        # STAGE 3
+            # =========================
+            # STAGE 2 - PREPARE
+            # =========================
+
             ProgressTracker.update(
                 job,
-                60,
-                "converting"
+                25,
+                "preparing"
             )
 
             job.image_type = (
@@ -111,24 +114,56 @@ class ConversionManager:
                 )
             )
 
-            converter.convert(job, job.output_path)
+            # =========================
+            # STAGE 3 - CONVERT
+            # =========================
 
-        # STAGE 4
             ProgressTracker.update(
                 job,
-                85,
+                50,
+                "converting"
+            )
+
+            if job.target_size_enabled:
+
+                TargetSizeOptimizer.optimize_quality(
+
+                    converter=converter,
+
+                    job=job,
+
+                    target_size_kb=job.target_size_kb
+                )
+
+            else:
+
+                converter.convert(
+                    job,
+                    job.output_path
+                )
+
+            # =========================
+            # STAGE 4 - ANALYZE RESULT
+            # =========================
+
+            ProgressTracker.update(
+                job,
+                70,
                 "analyzing"
             )
 
-            job.converted_size = job.output_path.stat().st_size
+            job.converted_size = (
+                job.output_path.stat().st_size
+            )
 
-            reduction, percent = calculate_reduction(
-                job.original_size,
-                job.converted_size
+            reduction, percent = (
+                calculate_reduction(
+                    job.original_size,
+                    job.converted_size
+                )
             )
 
             job.reduction_bytes = reduction
-
             job.reduction_percent = percent
 
             job.ssim_score = (
@@ -144,24 +179,32 @@ class ConversionManager:
 
             with Image.open(job.output_path) as img:
 
-                job.resolution = f"{img.width}x{img.height}"
+                job.resolution = (
+                    f"{img.width}x{img.height}"
+                )
 
-        # STAGE 5
+            # =========================
+            # STAGE 5 - HEATMAP
+            # =========================
+
             ProgressTracker.update(
                 job,
-                95,
-                "finalizing"
+                85,
+                "heatmap"
             )
 
-            job.processing_time = round(
-                time.time() - start_time,
-                2
+            heatmap_dir = (
+                Path("outputs") / "heatmaps"
+            )
+
+            heatmap_dir.mkdir(
+                parents=True,
+                exist_ok=True
             )
 
             heatmap_output = (
-                Path("outputs")
-                / "heatmaps"
-                / f"{job.source_path.stem}_heatmap.png"
+                heatmap_dir /
+                f"{job.source_path.stem}_heatmap.png"
             )
 
             HeatmapGenerator.generate(
@@ -174,10 +217,28 @@ class ConversionManager:
                 heatmap_output
             )
 
+            # =========================
+            # STAGE 6 - COMPARISON
+            # =========================
+
+            ProgressTracker.update(
+                job,
+                92,
+                "comparison"
+            )
+
+            comparison_dir = (
+                Path("outputs") / "comparisons"
+            )
+
+            comparison_dir.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+
             comparison_output = (
-                Path("outputs")
-                / "comparisons"
-                / f"{job.source_path.stem}_compare.jpg"
+                comparison_dir /
+                f"{job.source_path.stem}_compare.jpg"
             )
 
             ComparisonGenerator.generate(
@@ -188,6 +249,15 @@ class ConversionManager:
 
             job.comparison_path = str(
                 comparison_output
+            )
+
+            # =========================
+            # FINALIZE
+            # =========================
+
+            job.processing_time = round(
+                time.time() - start_time,
+                2
             )
 
             job.status = "completed"
@@ -210,48 +280,77 @@ class ConversionManager:
                 "failed"
             )
 
+        finally:
+
+            # VERY IMPORTANT
+            self.cleanup_memory()
+
         return job
 
     def process_batch(self, jobs):
 
         results = []
 
-    # ADD JOBS TO QUEUE
+        # =========================
+        # ADD TO QUEUE
+        # =========================
+
         for job in jobs:
 
             self.queue_manager.add_job(job)
 
         queued_jobs = []
 
-    # EXTRACT QUEUE SAFELY
         while self.queue_manager.has_jobs():
 
-            job = self.queue_manager.get_next_job()
+            next_job = (
+                self.queue_manager.get_next_job()
+            )
 
-            if job:
+            if next_job:
 
-                queued_jobs.append(job)
+                queued_jobs.append(next_job)
 
-    # PROCESS THREADS
-        with ThreadPoolExecutor(max_workers=self.workers) as executor:
+        # =========================
+        # SAFE THREAD PROCESSING
+        # =========================
 
-            futures = [
-                executor.submit(self.process_job, job)
+        with ThreadPoolExecutor(
+            max_workers=self.workers
+        ) as executor:
+
+            future_map = {
+
+                executor.submit(
+                    self.process_job,
+                    job
+                ): job
+
                 for job in queued_jobs
-            ]
+            }
 
-            for future in as_completed(futures):
+            for future in as_completed(future_map):
 
                 job_result = future.result()
 
-                if job_result.status == "completed":
-                
-                    self.queue_manager.mark_completed(job_result)
+                if (
+                    job_result.status
+                    == "completed"
+                ):
+
+                    self.queue_manager.mark_completed(
+                        job_result
+                    )
 
                 else:
 
-                    self.queue_manager.mark_failed(job_result)
+                    self.queue_manager.mark_failed(
+                        job_result
+                    )
 
                 results.append(job_result)
+
+                # EXTRA CLEANUP
+                self.cleanup_memory()
 
         return results

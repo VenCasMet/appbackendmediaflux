@@ -14,13 +14,39 @@ class JPEGConverter(BaseConverter):
 
         with Image.open(job.source_path) as img:
 
-            img = img.convert("RGB")
+            # =========================
+            # PREPARE IMAGE
+            # =========================
+
+            img = self.prepare_image(
+                img,
+                job
+            )
+
+            # JPEG requires RGB
+            if img.mode != "RGB":
+
+                img = img.convert("RGB")
+
+            # =========================
+            # SAVE SETTINGS
+            # =========================
 
             save_kwargs = {
-                "format": config["pil_format"],
-                "quality": job.quality
+
+                "format":
+                    config["pil_format"],
+
+                "quality":
+                    job.quality,
+
+                "optimize":
+                    True
             }
 
-            img.save(output_path, **save_kwargs)
+            img.save(
+                output_path,
+                **save_kwargs
+            )
 
         return output_path

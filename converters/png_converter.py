@@ -14,7 +14,10 @@ class PNGConverter(BaseConverter):
 
         with Image.open(job.source_path) as img:
 
-            img = self.prepare_image(img)
+            img = self.prepare_image(
+    img,
+    job
+)
 
             save_kwargs = {
                 "format": config["pil_format"],

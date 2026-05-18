@@ -5,6 +5,10 @@ from pathlib import Path
 @dataclass
 class ConversionJob:
 
+    # =========================
+    # REQUIRED FIELDS
+    # =========================
+
     source_path: Path
 
     output_format: str
@@ -13,7 +17,35 @@ class ConversionJob:
 
     method: int
 
+    # =========================
+    # TARGET SIZE SETTINGS
+    # =========================
+
+    target_size_kb: int = 0
+
+    target_size_enabled: bool = False
+
+    # =========================
+    # RESIZE SETTINGS
+    # =========================
+
+    resize_enabled: bool = False
+
+    resize_width: int = 0
+
+    resize_height: int = 0
+
+    keep_aspect_ratio: bool = True
+
+    # =========================
+    # GENERAL OPTIONS
+    # =========================
+
     overwrite: bool = False
+
+    # =========================
+    # JOB STATUS
+    # =========================
 
     status: str = "queued"
 
@@ -21,7 +53,19 @@ class ConversionJob:
 
     error: str = ""
 
+    current_stage: str = "queued"
+
+    eta: float = 0
+
+    # =========================
+    # FILE OUTPUT
+    # =========================
+
     output_path: Path = None
+
+    # =========================
+    # SIZE + PERFORMANCE
+    # =========================
 
     original_size: int = 0
 
@@ -35,9 +79,9 @@ class ConversionJob:
 
     resolution: str = ""
 
-    current_stage: str = "queued"
-
-    eta: float = 0
+    # =========================
+    # ANALYSIS
+    # =========================
 
     optimization_result: dict = None
 
@@ -52,6 +96,10 @@ class ConversionJob:
     keep_original: bool = False
 
     image_type: str = ""
+
+    # =========================
+    # GENERATED ASSETS
+    # =========================
 
     heatmap_path: str = ""
 
