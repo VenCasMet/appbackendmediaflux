@@ -1,14 +1,14 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from PIL import Image
-
+from PIL import Image, ImageOps
 from utils.resize_engine import ResizeEngine
 
 
 class BaseConverter(ABC):
 
     def prepare_image(self, image: Image.Image, job=None):
+        image = ImageOps.exif_transpose(image)
 
         # =========================
         # COLOR MODE FIXES
