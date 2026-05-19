@@ -81,36 +81,60 @@ def process_batch_job(
     quality
 ):
 
-    results = manager.process_batch(jobs)
-
     final_results = []
 
-    processed = 0
-    failed = 0
+processed = 0
+failed = 0
 
-    for result in results:
-        job_registry.update_job(
+for single_job in jobs:
 
-            job_id,
+    result = manager.process_job(
+        single_job
+    )
 
-            {
+    job_registry.update_job(
 
-                "status": "processing",
+        job_id,
 
-                "processed_files": processed,
+        {
 
-                "failed_files": failed,
+            "status": "processing",
 
-                "progress": int(
-                   (
-                        (processed + failed)
-                        / len(results)
-                    ) * 100
-                )
-            }
-        )
+            "processed_files":
+                processed,
 
-        if result.status == "completed":
+            "failed_files":
+                failed,
+
+            "progress":
+                result.progress,
+
+            "current_stage":
+                result.current_stage
+        }
+    )
+        # job_registry.update_job(
+
+        #     job_id,
+
+        #     {
+
+        #         "status": "processing",
+
+        #         "processed_files": processed,
+
+        #         "failed_files": failed,
+
+        #         "progress": int(
+        #            (
+        #                 (processed + failed)
+        #                 / len(results)
+        #             ) * 100
+        #         )
+        #     }
+        # )
+
+    if result.status == "completed":
 
             processed += 1
 
@@ -161,7 +185,7 @@ def process_batch_job(
                 "progress":
                     result.progress,
 
-                "stage":
+                "current_stage":
                     result.current_stage,
 
                 "heatmap":
@@ -179,7 +203,7 @@ def process_batch_job(
                 
             })
 
-        else:
+    else:
 
             failed += 1
 
