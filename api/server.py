@@ -83,36 +83,40 @@ def process_batch_job(
 
     final_results = []
 
-processed = 0
-failed = 0
+    processed = 0
+    failed = 0
 
-for single_job in jobs:
+    for single_job in jobs:
 
-    result = manager.process_job(
-        single_job
-    )
+        result = manager.process_job(
+           single_job
+        )
+        if result is None:
+            failed += 1
+            continue
 
-    job_registry.update_job(
+        job_registry.update_job(
 
-        job_id,
+            job_id,
 
-        {
+            {
 
-            "status": "processing",
+                "status": "processing",
 
-            "processed_files":
-                processed,
+                "processed_files":
+                    processed,
 
-            "failed_files":
-                failed,
+                "failed_files":
+                    failed,
 
-            "progress":
-                result.progress,
+                "progress": int(
+                    ((processed + failed + 1) / len(jobs)) * 100
+                ),
 
-            "current_stage":
-                result.current_stage
-        }
-    )
+                "current_stage":
+                    result.current_stage
+            }
+        )
         # job_registry.update_job(
 
         #     job_id,
@@ -134,7 +138,7 @@ for single_job in jobs:
         #     }
         # )
 
-    if result.status == "completed":
+        if result.status == "completed":
 
             processed += 1
 
@@ -203,7 +207,7 @@ for single_job in jobs:
                 
             })
 
-    else:
+        else:
 
             failed += 1
 
