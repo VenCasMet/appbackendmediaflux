@@ -66,7 +66,7 @@ class ConversionManager:
 
         gc.collect()
 
-    def process_job(self, job):
+    def process_job(self, job, progress_callback=None):
 
         converter = self.get_converter(
             job.output_format
@@ -87,6 +87,8 @@ class ConversionManager:
                 10,
                 "loading"
             )
+            if progress_callback:
+                progress_callback(job)
 
             job.image_analysis = (
                 ImageAnalyzer.analyze(
@@ -107,6 +109,8 @@ class ConversionManager:
                 25,
                 "preparing"
             )
+            if progress_callback:
+                progress_callback(job)
 
             job.image_type = (
                 QualityOptimizer.detect_image_type(
@@ -123,6 +127,8 @@ class ConversionManager:
                 50,
                 "converting"
             )
+            if progress_callback:
+                progress_callback(job)
 
             if job.target_size_enabled:
 
@@ -151,6 +157,8 @@ class ConversionManager:
                 70,
                 "analyzing"
             )
+            if progress_callback:
+                progress_callback(job)
 
             job.converted_size = (
                 job.output_path.stat().st_size
@@ -192,6 +200,8 @@ class ConversionManager:
                 85,
                 "heatmap"
             )
+            if progress_callback:
+                progress_callback(job)
 
             heatmap_dir = (
                 Path("outputs") / "heatmaps"
@@ -226,6 +236,8 @@ class ConversionManager:
                 92,
                 "comparison"
             )
+            if progress_callback:
+                progress_callback(job)
 
             comparison_dir = (
                 Path("outputs") / "comparisons"
@@ -267,6 +279,8 @@ class ConversionManager:
                 100,
                 "completed"
             )
+            if progress_callback:
+                progress_callback(job)
 
         except Exception as e:
 
@@ -279,7 +293,8 @@ class ConversionManager:
                 0,
                 "failed"
             )
-
+            if progress_callback:
+                progress_callback(job)
         finally:
 
             # VERY IMPORTANT

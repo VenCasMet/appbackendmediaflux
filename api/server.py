@@ -88,8 +88,40 @@ def process_batch_job(
 
     for single_job in jobs:
 
+        def live_progress_callback(updated_job):
+
+            print(
+                updated_job.progress,
+                updated_job.current_stage
+            )
+
+            job_registry.update_job(
+
+            job_id,
+
+            {
+
+                "status": "processing",
+
+                "progress":
+                    updated_job.progress,
+
+                "current_stage":
+                    updated_job.current_stage,
+
+                "processed_files":
+                    processed,
+
+                "failed_files":
+                    failed
+            }
+        )
+
         result = manager.process_job(
-           single_job
+
+            single_job,
+
+            progress_callback=live_progress_callback
         )
         if result is None:
             failed += 1
