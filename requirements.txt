@@ -5,3 +5,5 @@ opencv-python
 imagehash
 scikit-image
 tqdm
+fastapi
+uvicorn[standard]
