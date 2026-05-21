@@ -1,4 +1,4 @@
-from concurrent.futures import thread
+import time
 from pathlib import Path
 import shutil
 import uuid
@@ -37,21 +37,13 @@ app.add_middleware(
 # DIRECTORIES
 # =========================
 
-UPLOAD_DIR = Path("uploads")
-OUTPUT_DIR = Path("outputs")
+TEMP_DIR = Path("temp")
 
-UPLOAD_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
+TEMP_DIR.mkdir(exist_ok=True)
 app.mount(
-    "/uploads",
-    StaticFiles(directory="uploads"),
-    name="uploads",
-)
-
-app.mount(
-    "/outputs",
-    StaticFiles(directory="outputs"),
-    name="outputs",
+    "/temp",
+    StaticFiles(directory="temp"),
+    name="temp",
 )
 # =========================
 # MANAGER
@@ -59,6 +51,54 @@ app.mount(
 
 manager = ConversionManager()
 job_registry = JobRegistry()
+
+def cleanup_old_temp_folders(max_age_minutes=30):
+
+    now = time.time()
+
+    for folder in TEMP_DIR.iterdir():
+
+        if folder.is_dir():
+
+            folder_age = (
+                now - folder.stat().st_mtime
+            )
+
+            age_minutes = (
+                folder_age / 60
+            )
+
+            if age_minutes > max_age_minutes:
+
+                try:
+
+                    shutil.rmtree(folder)
+
+                    print(
+                        f"Deleted old temp folder: {folder}"
+                    )
+
+                except Exception as e:
+
+                    print(
+                        f"Cleanup failed for {folder}: {e}"
+                    )
+def cleanup_worker():
+
+    while True:
+
+        cleanup_old_temp_folders(
+            max_age_minutes=30
+        )
+
+        time.sleep(300)
+
+cleanup_thread = threading.Thread(
+    target=cleanup_worker,
+    daemon=True
+)
+
+cleanup_thread.start()
 # =========================
 # HOME
 # =========================
@@ -180,10 +220,10 @@ def process_batch_job(
                     result.source_path.name,
 
                 "original_file":
-                    str(result.source_path),
+                    str(result.source_path).replace("\\", "/"),
 
                 "optimized_file":
-                    str(result.output_path),
+                    str(result.output_path).replace("\\", "/"),
 
                 "original_size_kb":
                     round(
@@ -225,10 +265,10 @@ def process_batch_job(
                     result.current_stage,
 
                 "heatmap":
-                    result.heatmap_path,
+                    result.heatmap_path.replace("\\", "/"),
 
                 "comparison":
-                    result.comparison_path,
+                    result.comparison_path.replace("\\", "/"),
 
                 "target_size_kb":
                     result.target_size_kb,
@@ -286,6 +326,13 @@ async def upload_images(
 
     batch_job_id = str(uuid.uuid4())
 
+    request_dir = TEMP_DIR / batch_job_id
+
+    request_dir.mkdir(
+        parents=True,
+        exist_ok=True
+)
+
     job_registry.create_job(batch_job_id)
 
     jobs = []
@@ -299,7 +346,7 @@ async def upload_images(
         )
 
         save_path = (
-            UPLOAD_DIR / unique_name
+            request_dir / unique_name
         )
 
         with open(save_path, "wb") as buffer:
@@ -336,9 +383,7 @@ async def upload_images(
             )
 
         output_path = (
-
-            OUTPUT_DIR /
-
+            request_dir /
             f"optimized_{unique_name}.{selected_format}"
         )
 
@@ -376,7 +421,8 @@ async def upload_images(
         {
             "status": "processing",
             "progress": 10,
-            "total_files": len(jobs)
+            "total_files": len(jobs),
+            "request_dir": str(request_dir).replace("\\", "/")
         }
     )
 

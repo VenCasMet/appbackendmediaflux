@@ -203,17 +203,8 @@ class ConversionManager:
             if progress_callback:
                 progress_callback(job)
 
-            heatmap_dir = (
-                Path("outputs") / "heatmaps"
-            )
-
-            heatmap_dir.mkdir(
-                parents=True,
-                exist_ok=True
-            )
-
             heatmap_output = (
-                heatmap_dir /
+                job.output_path.parent /
                 f"{job.source_path.stem}_heatmap.png"
             )
 
@@ -239,17 +230,8 @@ class ConversionManager:
             if progress_callback:
                 progress_callback(job)
 
-            comparison_dir = (
-                Path("outputs") / "comparisons"
-            )
-
-            comparison_dir.mkdir(
-                parents=True,
-                exist_ok=True
-            )
-
             comparison_output = (
-                comparison_dir /
+                job.output_path.parent /
                 f"{job.source_path.stem}_compare.jpg"
             )
 
