@@ -160,7 +160,7 @@ def process_batch_job(
     )
 
     with ThreadPoolExecutor(
-        max_workers=4
+        max_workers=3
     ) as executor:
 
         future_to_job = {
