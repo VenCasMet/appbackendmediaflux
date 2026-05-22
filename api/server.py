@@ -10,7 +10,10 @@ from fastapi import (
     File,
     Form
 )
-
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed
+)
 from fastapi.middleware.cors import (
     CORSMiddleware
 )
@@ -52,7 +55,7 @@ app.mount(
 manager = ConversionManager()
 job_registry = JobRegistry()
 
-def cleanup_old_temp_folders(max_age_minutes=30):
+def cleanup_old_temp_folders(max_age_minutes=10):
 
     now = time.time()
 
@@ -88,10 +91,10 @@ def cleanup_worker():
     while True:
 
         cleanup_old_temp_folders(
-            max_age_minutes=30
+            max_age_minutes=10
         )
 
-        time.sleep(300)
+        time.sleep(120)
 
 cleanup_thread = threading.Thread(
     target=cleanup_worker,
@@ -113,6 +116,15 @@ def home():
 # =========================
 # UPLOAD + OPTIMIZE
 # =========================
+def process_single_job(single_job):
+
+    result = manager.process_job(
+        single_job
+    )
+
+    return result
+
+
 def process_batch_job(
     job_id,
     jobs,
@@ -126,162 +138,161 @@ def process_batch_job(
     processed = 0
     failed = 0
 
-    for single_job in jobs:
+    total_jobs = len(jobs)
 
-        def live_progress_callback(updated_job):
+    job_registry.update_job(
 
-            print(
-                updated_job.progress,
-                updated_job.current_stage
+        job_id,
+
+        {
+
+            "status": "processing",
+
+            "progress": 0,
+
+            "processed_files": 0,
+
+            "failed_files": 0,
+
+            "current_stage":
+                "Starting batch optimization..."
+        }
+    )
+
+    with ThreadPoolExecutor(
+        max_workers=4
+    ) as executor:
+
+        future_to_job = {
+
+            executor.submit(
+                process_single_job,
+                single_job
+            ): single_job
+
+            for single_job in jobs
+        }
+
+        for future in as_completed(
+            future_to_job
+        ):
+
+            try:
+
+                result = future.result()
+
+                if result is None:
+
+                    failed += 1
+
+                elif result.status == "completed":
+
+                    processed += 1
+
+                    final_results.append({
+
+                        "filename":
+                            result.source_path.name,
+
+                        "original_file":
+                            str(result.source_path).replace("\\", "/"),
+
+                        "optimized_file":
+                            str(result.output_path).replace("\\", "/"),
+
+                        "original_size_kb":
+                            round(
+                                result.original_size / 1024,
+                                2
+                            ),
+
+                        "optimized_size_kb":
+                            round(
+                                result.converted_size / 1024,
+                                2
+                            ),
+
+                        "saved_percent":
+                            round(
+                                result.reduction_percent,
+                                2
+                            ),
+
+                        "ssim":
+                            round(
+                                result.ssim_score,
+                                4
+                            ),
+
+                        "format":
+                            result.output_format.upper(),
+
+                        "quality":
+                            result.quality,
+
+                        "resolution":
+                            result.resolution,
+
+                        "progress":
+                            100,
+
+                        "current_stage":
+                            "completed",
+
+                        "heatmap":
+                            result.heatmap_path.replace("\\", "/"),
+
+                        "comparison":
+                            result.comparison_path.replace("\\", "/"),
+
+                        "target_size_kb":
+                            result.target_size_kb,
+
+                        "target_size_enabled":
+                            result.target_size_enabled
+                    })
+
+                else:
+
+                    failed += 1
+
+            except Exception as e:
+
+                print(
+                    f"Worker failed: {e}"
+                )
+
+                failed += 1
+
+            batch_progress = int(
+
+                (
+                    (processed + failed)
+                    / total_jobs
+                ) * 100
             )
 
             job_registry.update_job(
 
-            job_id,
+                job_id,
 
-            {
+                {
 
-                "status": "processing",
+                    "status": "processing",
 
-                "progress":
-                    updated_job.progress,
+                    "progress":
+                        batch_progress,
 
-                "current_stage":
-                    updated_job.current_stage,
+                    "processed_files":
+                        processed,
 
-                "processed_files":
-                    processed,
+                    "failed_files":
+                        failed,
 
-                "failed_files":
-                    failed
-            }
-        )
-
-        result = manager.process_job(
-
-            single_job,
-
-            progress_callback=live_progress_callback
-        )
-        if result is None:
-            failed += 1
-            continue
-
-        job_registry.update_job(
-
-            job_id,
-
-            {
-
-                "status": "processing",
-
-                "processed_files":
-                    processed,
-
-                "failed_files":
-                    failed,
-
-                "progress": int(
-                    ((processed + failed + 1) / len(jobs)) * 100
-                ),
-
-                "current_stage":
-                    result.current_stage
-            }
-        )
-        # job_registry.update_job(
-
-        #     job_id,
-
-        #     {
-
-        #         "status": "processing",
-
-        #         "processed_files": processed,
-
-        #         "failed_files": failed,
-
-        #         "progress": int(
-        #            (
-        #                 (processed + failed)
-        #                 / len(results)
-        #             ) * 100
-        #         )
-        #     }
-        # )
-
-        if result.status == "completed":
-
-            processed += 1
-
-            final_results.append({
-
-                "filename":
-                    result.source_path.name,
-
-                "original_file":
-                    str(result.source_path).replace("\\", "/"),
-
-                "optimized_file":
-                    str(result.output_path).replace("\\", "/"),
-
-                "original_size_kb":
-                    round(
-                        result.original_size / 1024,
-                        2
-                    ),
-
-                "optimized_size_kb":
-                    round(
-                        result.converted_size / 1024,
-                        2
-                    ),
-
-                "saved_percent":
-                    round(
-                        result.reduction_percent,
-                        2
-                    ),
-
-                "ssim":
-                    round(
-                        result.ssim_score,
-                        4
-                    ),
-
-                "format":
-                    result.output_format.upper(),
-
-                "quality":
-                    result.quality,
-
-                "resolution":
-                    result.resolution,
-
-                "progress":
-                    result.progress,
-
-                "current_stage":
-                    result.current_stage,
-
-                "heatmap":
-                    result.heatmap_path.replace("\\", "/"),
-
-                "comparison":
-                    result.comparison_path.replace("\\", "/"),
-
-                "target_size_kb":
-                    result.target_size_kb,
-                
-                "target_size_enabled":
-                    result.target_size_enabled
-                
-                
-            })
-
-        else:
-
-            failed += 1
+                    "current_stage":
+                        f"{processed}/{total_jobs} images optimized"
+                }
+            )
 
     job_registry.update_job(
 
@@ -295,9 +306,14 @@ def process_batch_job(
 
             "results": final_results,
 
-            "processed_files": processed,
+            "processed_files":
+                processed,
 
-            "failed_files": failed
+            "failed_files":
+                failed,
+
+            "current_stage":
+                "Batch optimization completed"
         }
     )
 @app.post("/upload")
