@@ -274,25 +274,28 @@ def process_batch_job(
 
             job_registry.update_job(
 
-                job_id,
+    job_id,
 
-                {
+    {
 
-                    "status": "processing",
+        "status": "processing",
 
-                    "progress":
-                        batch_progress,
+        "progress":
+            batch_progress,
 
-                    "processed_files":
-                        processed,
+        "processed_files":
+            processed,
 
-                    "failed_files":
-                        failed,
+        "failed_files":
+            failed,
 
-                    "current_stage":
-                        f"{processed}/{total_jobs} images optimized"
-                }
-            )
+        "results":
+            final_results,
+
+        "current_stage":
+            f"{processed}/{total_jobs} images optimized"
+    }
+)
 
     job_registry.update_job(
 
