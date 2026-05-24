@@ -155,7 +155,7 @@ def process_batch_job(
             "failed_files": 0,
 
             "current_stage":
-                "Starting batch optimization..."
+                 f"Preparing {total_jobs} images for optimization..."
         }
     )
 
@@ -264,6 +264,13 @@ def process_batch_job(
 
                 failed += 1
 
+            current_image = processed + failed
+
+            current_stage_message = (
+    f"Optimizing image "
+    f"{current_image} of {total_jobs}"
+)
+
             batch_progress = int(
 
                 (
@@ -293,7 +300,7 @@ def process_batch_job(
             final_results,
 
         "current_stage":
-            f"{processed}/{total_jobs} images optimized"
+            current_stage_message
     }
 )
 
@@ -316,7 +323,7 @@ def process_batch_job(
                 failed,
 
             "current_stage":
-                "Batch optimization completed"
+                f"{processed} images optimized successfully"
         }
     )
 @app.post("/upload")
