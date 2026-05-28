@@ -1,0 +1,56 @@
+name: mediaflux_app
+
+description: "MediaFlux Adaptive Media Optimization App"
+
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  image_picker: ^1.2.2
+  http: ^1.6.0
+  url_launcher: ^6.3.2
+  before_after: ^3.2.0
+  flutter_animate: ^4.5.0
+
+  dio: ^5.9.0
+  path_provider: ^2.1.5
+  permission_handler: ^12.0.1
+  gal: ^2.3.0
+
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/logo.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
+  adaptive_icon_background: "#020B2D"
+  adaptive_icon_foreground: "assets/logo.png"
+
+flutter_native_splash:
+  color: "#020B2D"
+  image: assets/logo.png
+
+  android_12:
+    color: "#020B2D"
+    image: assets/logo.png
